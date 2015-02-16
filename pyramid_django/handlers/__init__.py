@@ -408,6 +408,8 @@ def patch_webob():
         MultiDict.getlist = MultiDict.getall
 
 
+from pyramid.response import Response as PResponse
+
 class PyramidHandler(base.BaseHandler):
     request_class = PyramidDjangoRequest
 
@@ -415,32 +417,31 @@ class PyramidHandler(base.BaseHandler):
         self.load_middleware()
         patch_webob()
 
-    def __call__(self, environ, start_response):
+    def __call__(self, request):
+        environ = request.environ
+        if not isinstance(request, self.request_class):
+            request = self.request_class(request.environ)
+
         set_script_prefix(get_script_name(environ))
         signals.request_started.send(sender=self.__class__, environ=environ)
-        try:
-            request = self.request_class(environ)
-        except UnicodeDecodeError:
-            logger.warning('Bad Request (UnicodeDecodeError)',
-                exc_info=sys.exc_info(),
-                extra={
-                    'status_code': 400,
-                }
-            )
-            response = http.HttpResponseBadRequest()
-        else:
-            response = self.get_response(request)
 
+        response = self.get_response(request)
         response._handler_class = self.__class__
 
-        status = '%s %s' % (response.status_code, response.reason_phrase)
-        response_headers = [(str(k), str(v)) for k, v in response.items()]
+        presponse = PResponse()
+        presponse.status = '%s %s' % (response.status_code, response.reason_phrase)
+
+        for k, v in response.items():
+            presponse.headers[k] = v
+ 
         for c in response.cookies.values():
-            response_headers.append((str('Set-Cookie'), str(c.output(header=''))))
-        start_response(force_str(status), response_headers)
-        if getattr(response, 'file_to_stream', None) is not None and environ.get('wsgi.file_wrapper'):
-            response = environ['wsgi.file_wrapper'](response.file_to_stream)
-        return response
+            presponse_headers.add((str('Set-Cookie'), str(c.output(header=''))))
+
+#        if getattr(response, 'file_to_stream', None) is not None and environ.get('wsgi.file_wrapper'):
+#            response = environ['wsgi.file_wrapper'](response.file_to_stream)
+
+        presponse.app_iter = response
+        return presponse
 
 
 def get_path_info(environ):
@@ -506,7 +507,7 @@ def get_str_from_wsgi(environ, key, default):
     return value.decode(UTF_8, errors='replace') if six.PY3 else value
 
 
-def get_wsgi_application():
+def get_django_view():
     """
     The public interface to Django's WSGI support. Should return a WSGI
     callable.
@@ -515,5 +516,6 @@ def get_wsgi_application():
     case the internal WSGI implementation changes or moves in the future.
 
     """
+
     django.setup()
-    return PyramidHandler()
+    return PyramidHandler().__call__

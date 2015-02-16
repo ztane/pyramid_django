@@ -1,6 +1,8 @@
 import os
 import sys
-from pyramid_django.handlers import get_wsgi_application
+from pyramid_django.handlers import get_django_view
+from pyramid_django.request import PyramidDjangoRequest
+
 from pyramid.config import Configurator
 
 
@@ -13,18 +15,11 @@ def main(global_config, **settings):
     
     django_project = os.path.abspath(django_project)
     sys.path.insert(0, django_project)
-    config = Configurator(settings=settings)
-    config.scan(django_settings)
+
+    config = Configurator(settings=settings, request_factory=PyramidDjangoRequest)
+    # config.scan(django_settings.rpartition('.')[0])
     
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", django_settings)
-    django_application = get_wsgi_application()
-    
-    class LegacyView(object):
-        def __init__(self, app):
-            self.app = app
-        def __call__(self, request):
-            return request.get_response(self.app)
-
-    django_view = LegacyView(django_application)
+    django_view = get_django_view()
     config.add_notfound_view(django_view)
     return config.make_wsgi_app()
