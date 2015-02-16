@@ -1,6 +1,6 @@
 import os
 import sys
-from django.core.wsgi import get_wsgi_application
+from pyramid_django.handlers import get_wsgi_application
 from pyramid.config import Configurator
 
 
